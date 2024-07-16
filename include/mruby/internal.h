@@ -126,6 +126,7 @@ mrb_value mrb_rational_add(mrb_state *mrb, mrb_value x, mrb_value y);
 mrb_value mrb_rational_sub(mrb_state *mrb, mrb_value x, mrb_value y);
 mrb_value mrb_rational_mul(mrb_state *mrb, mrb_value x, mrb_value y);
 mrb_value mrb_rational_div(mrb_state *mrb, mrb_value x, mrb_value y);
+mrb_value mrb_as_rational(mrb_state *mrb, mrb_value x);
 void mrb_rational_copy(mrb_state *mrb, mrb_value x, mrb_value y);
 #endif
 
@@ -194,9 +195,6 @@ mrb_value mrb_exec_irep(mrb_state *mrb, mrb_value self, struct RProc *p);
 mrb_value mrb_obj_instance_eval(mrb_state*, mrb_value);
 mrb_value mrb_mod_module_eval(mrb_state*, mrb_value);
 mrb_value mrb_f_send(mrb_state *mrb, mrb_value self);
-
-/* mrb_callinfo::flags */
-#define MRB_CI_COMPANION_BLOCK  0x01    /* it means `method { ... }`, not `method(&blk)` */
 
 #ifdef MRB_USE_BIGINT
 mrb_value mrb_bint_new_int(mrb_state *mrb, mrb_int x);

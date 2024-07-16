@@ -292,6 +292,40 @@ mrb_ary_s_create(mrb_state *mrb, mrb_value klass)
 
 static void ary_replace(mrb_state*, struct RArray*, struct RArray*);
 
+static mrb_value
+mrb_ary_init(mrb_state *mrb, mrb_value ary)
+{
+  mrb_value ss = mrb_fixnum_value(0);
+  mrb_value obj = mrb_nil_value();
+  mrb_value blk = mrb_nil_value();
+
+  mrb_get_args(mrb, "|oo&", &ss, &obj, &blk);
+
+  if (mrb_array_p(ss) && mrb_nil_p(obj) && mrb_nil_p(blk)) {
+    ary_replace(mrb, mrb_ary_ptr(ary), mrb_ary_ptr(ss));
+    return ary;
+  }
+
+  mrb_int size = mrb_as_int(mrb, ss);
+  struct RArray *a = mrb_ary_ptr(ary);
+
+  if (ARY_CAPA(a) < size) {
+    ary_expand_capa(mrb, a, size);
+  }
+
+  for (mrb_int i=0; i<size; i++) {
+    mrb_value val;
+    if (mrb_nil_p(blk)) {
+      val = obj;
+    }
+    else {
+      val = mrb_funcall_id(mrb, blk, MRB_SYM(call), 1, mrb_fixnum_value(i));
+    }
+    mrb_ary_set(mrb, ary, i, val);
+  }
+  return ary;
+}
+
 static void
 ary_concat(mrb_state *mrb, struct RArray *a, struct RArray *a2)
 {
@@ -1099,31 +1133,84 @@ mrb_ary_last(mrb_state *mrb, mrb_value self)
   return mrb_ary_new_from_values(mrb, size, ARY_PTR(a) + alen - size);
 }
 
+/*
+ *  call-seq:
+ *     ary.index(val)            -> int or nil
+ *     ary.index {|item| block } -> int or nil
+ *     array.index -> enumerator
+ *
+ *  Returns the _index_ of the first object in +ary+ such that the object is
+ *  <code>==</code> to +obj+.
+ *
+ *  If a block is given instead of an argument, returns the _index_ of the
+ *  first object for which the block returns +true+. Returns +nil+ if no
+ *  match is found.
+ *
+ * ISO 15.2.12.5.14
+ */
 static mrb_value
 mrb_ary_index_m(mrb_state *mrb, mrb_value self)
 {
-  mrb_value obj = mrb_get_arg1(mrb);
+  mrb_value obj, blk;
 
-  for (mrb_int i = 0; i < RARRAY_LEN(self); i++) {
-    if (mrb_equal(mrb, RARRAY_PTR(self)[i], obj)) {
-      return mrb_int_value(mrb, i);
+  if (mrb_get_args(mrb, "|o&", &obj, &blk) == 0 && mrb_nil_p(blk)) {
+    return mrb_funcall_id(mrb, self, MRB_SYM(to_enum), 1, mrb_symbol_value(MRB_SYM(index)));
+  }
+
+  if (mrb_nil_p(blk)) {
+    for (mrb_int i = 0; i < RARRAY_LEN(self); i++) {
+      if (mrb_equal(mrb, RARRAY_PTR(self)[i], obj)) {
+        return mrb_int_value(mrb, i);
+      }
+    }
+  }
+  else {
+    for (mrb_int i = 0; i < RARRAY_LEN(self); i++) {
+      mrb_value eq = mrb_funcall_id(mrb, blk, MRB_SYM(call), 1, RARRAY_PTR(self)[i]);
+      if (mrb_test(eq)) {
+        return mrb_int_value(mrb, i);
+      }
     }
   }
   return mrb_nil_value();
 }
 
+/*
+ *  call-seq:
+ *     ary.rindex(val)            -> int or nil
+ *     ary.rindex {|item| block } -> int or nil
+ *     array.rindex -> enumerator
+ *
+ *  Returns the _index_ of the first object in +ary+ such that the object is
+ *  <code>==</code> to +obj+.
+ *
+ *  If a block is given instead of an argument, returns the _index_ of the
+ *  first object for which the block returns +true+. Returns +nil+ if no
+ *  match is found.
+ *
+ * ISO 15.2.12.5.26
+ */
 static mrb_value
 mrb_ary_rindex_m(mrb_state *mrb, mrb_value self)
 {
-  mrb_value obj = mrb_get_arg1(mrb);
+  mrb_value obj, blk;
+
+  if (mrb_get_args(mrb, "|o&", &obj, &blk) == 0 && mrb_nil_p(blk)) {
+    return mrb_funcall_id(mrb, self, MRB_SYM(to_enum), 1, mrb_symbol_value(MRB_SYM(rindex)));
+  }
 
   for (mrb_int i = RARRAY_LEN(self) - 1; i >= 0; i--) {
-    mrb_int len;
-
-    if (mrb_equal(mrb, RARRAY_PTR(self)[i], obj)) {
+    if (mrb_nil_p(blk)) {
+      if (mrb_equal(mrb, RARRAY_PTR(self)[i], obj)) {
       return mrb_int_value(mrb, i);
+      }
     }
-    if (i > (len = RARRAY_LEN(self))) {
+    else {
+      mrb_value eq = mrb_funcall_id(mrb, blk, MRB_SYM(call), 1, RARRAY_PTR(self)[i]);
+      if (mrb_test(eq)) return mrb_int_value(mrb, i);
+    }
+    mrb_int len = RARRAY_LEN(self);
+    if (i > len) {
       i = len;
     }
   }
@@ -1324,33 +1411,100 @@ mrb_ary_to_s(mrb_state *mrb, mrb_value self)
   return ret;
 }
 
+/* check array equality: 1=equal,0=not_equal,-1=need_elments_check */
+static mrb_int
+ary_eq(mrb_state *mrb, mrb_value ary1, mrb_value ary2)
+{
+  if (mrb_obj_equal(mrb, ary1, ary2)) return 1;
+  if (!mrb_array_p(ary2)) return 0;
+  if (RARRAY_LEN(ary1) != RARRAY_LEN(ary2)) return 0;
+
+  return -1;
+}
+
+/*
+ * call-seq:
+ *   array == other   -> true or false
+ *
+ *  Equality---Two arrays are equal if they contain the same number
+ *  of elements and if each element is equal to (according to
+ *  Object.==) the corresponding element in the other array.
+ *
+ */
 static mrb_value
 mrb_ary_eq(mrb_state *mrb, mrb_value ary1)
 {
   mrb_value ary2 = mrb_get_arg1(mrb);
+  mrb_int n = ary_eq(mrb, ary1, ary2);
 
-  mrb->c->ci->mid = 0;
-  if (mrb_obj_equal(mrb, ary1, ary2)) return mrb_true_value();
-  if (!mrb_array_p(ary2)) {
-    return mrb_false_value();
+  if (n == 1) return mrb_true_value();
+  if (n == 0) return mrb_false_value();
+
+  for (mrb_int i=0; i<RARRAY_LEN(ary1); i++) {
+    mrb_value eq = mrb_funcall_id(mrb, mrb_ary_entry(ary1, i), MRB_OPSYM(eq), 1, mrb_ary_entry(ary2, i));
+    if (!mrb_test(eq)) return mrb_false_value();
   }
-  if (RARRAY_LEN(ary1) != RARRAY_LEN(ary2)) return mrb_false_value();
-
-  return ary2;
+  return mrb_true_value();
 }
 
+/*
+ * call-seq:
+ *   array.eql? other_array -> true or false
+ *
+ *  Returns <code>true</code> if +self+ and _other_ are the same object,
+ *  or are both arrays with the same content.
+ *
+ */
+static mrb_value
+mrb_ary_eql(mrb_state *mrb, mrb_value ary1)
+{
+  mrb_value ary2 = mrb_get_arg1(mrb);
+  mrb_int n = ary_eq(mrb, ary1, ary2);
+
+  if (n == 1) return mrb_true_value();
+  if (n == 0) return mrb_false_value();
+
+  for (mrb_int i=0; i<RARRAY_LEN(ary1); i++) {
+    mrb_value eq = mrb_funcall_id(mrb, mrb_ary_entry(ary1, i), MRB_SYM_Q(eql), 1, mrb_ary_entry(ary2, i));
+    if (!mrb_test(eq)) return mrb_false_value();
+  }
+  return mrb_true_value();
+}
+
+/*
+ * call-seq:
+ *   array <=> other_array -> -1, 0, or 1
+ *
+ *  Comparison---Returns an integer (-1, 0, or +1)
+ *  if this array is less than, equal to, or greater than <i>other_ary</i>.
+ *  Each object in each array is compared (using <=>). If any value isn't
+ *  equal, then that inequality is the return value. If all the
+ *  values found are equal, then the return is based on a
+ *  comparison of the array lengths. Thus, two arrays are
+ *  "equal" according to <code>Array*<=></code> if and only if they have
+ *  the same length and the value of each element is equal to the
+ *  value of the corresponding element in the other array.
+ */
 static mrb_value
 mrb_ary_cmp(mrb_state *mrb, mrb_value ary1)
 {
   mrb_value ary2 = mrb_get_arg1(mrb);
 
-  mrb->c->ci->mid = 0;
   if (mrb_obj_equal(mrb, ary1, ary2)) return mrb_fixnum_value(0);
-  if (!mrb_array_p(ary2)) {
-    return mrb_nil_value();
-  }
+  if (!mrb_array_p(ary2)) return mrb_nil_value();
 
-  return ary2;
+  mrb_int len = RARRAY_LEN(ary1);
+  mrb_int n =  RARRAY_LEN(ary2);
+  if (len > n) len = n;
+  for (mrb_int i=0; i<len; i++) {
+    n = mrb_cmp(mrb, RARRAY_PTR(ary1)[i], RARRAY_PTR(ary2)[i]);
+    if (n == -2) return mrb_nil_value();
+    if (n != 0) return mrb_fixnum_value(n);
+  }
+  len = RARRAY_LEN(ary1) - RARRAY_LEN(ary2);
+  if (len == 0) return mrb_fixnum_value(0);
+  else if (len > 0) return mrb_fixnum_value(1);
+  else return mrb_fixnum_value(-1);
 }
 
 /* internal method to convert multi-value to single value */
@@ -1367,15 +1521,34 @@ mrb_ary_svalue(mrb_state *mrb, mrb_value ary)
   }
 }
 
+/*
+ * call-seq:
+ *   array.delete(obj) -> deleted_object
+ *   array.delete(obj) {|nosuch| ... } -> deleted_object or block_return
+ *
+ * Removes zero or more elements from self; returns self.
+ *
+ * When no block is given, removes from self each element e such
+ * that e == obj; returns the last deleted element
+ *
+ * Returns nil if no elements removed.
+ *
+ * When a block is given, removes from self each element e such
+ * that e == obj. If any such elements are found, ignores the block and
+ * returns the last. Otherwise, returns the block's return value.
+ */
 static mrb_value
 mrb_ary_delete(mrb_state *mrb, mrb_value self)
 {
+  mrb_value obj, blk;
+
+  mrb_get_args(mrb, "o&", &obj, &blk);
+
   struct RArray *ary = RARRAY(self);
   mrb_value *val_ptr = ARY_PTR(ary);
   size_t len = ARY_LEN(ary);
   mrb_bool modified = FALSE;
 
-  mrb_value obj = mrb_get_arg1(mrb);
   mrb_value ret = obj;
 
   size_t i = 0;
@@ -1401,12 +1574,82 @@ mrb_ary_delete(mrb_state *mrb, mrb_value self)
   }
 
   if (i == j) {
-    return mrb_nil_value();
+    if (mrb_nil_p(blk)) return mrb_nil_value();
+    return mrb_funcall_id(mrb, blk, MRB_SYM(call), 1, obj);
   }
 
   ARY_SET_LEN(ary, j);
-
   return ret;
+}
+
+static mrb_bool
+sort_cmp(mrb_state *mrb, mrb_value *p, mrb_int a, mrb_int b, mrb_value blk)
+{
+  mrb_int cmp;
+
+  if (mrb_nil_p(blk)) {
+    cmp = mrb_cmp(mrb, p[a], p[b]);
+  }
+  else {
+    mrb_value c = mrb_funcall_id(mrb, blk, MRB_SYM(call), 2, p[a], p[b]);
+    if (mrb_nil_p(c) || !mrb_fixnum_p(c)) {
+      mrb_raisef(mrb, E_ARGUMENT_ERROR, "comparison of %!v and %!v failed", p[a], p[b]);
+    }
+    cmp = mrb_fixnum(c);
+  }
+  return cmp > 0;
+}
+
+static void
+heapify(mrb_state *mrb, mrb_value *a, mrb_int index, mrb_int size, mrb_value blk)
+{
+  mrb_int max = index;
+  mrb_int left_index = 2 * index + 1;
+  mrb_int right_index = left_index + 1;
+  if (left_index < size && sort_cmp(mrb, a, left_index, max, blk)) {
+    max = left_index;
+  }
+  if (right_index < size && sort_cmp(mrb, a, right_index, max, blk)) {
+    max = right_index;
+  }
+  if (max != index) {
+    mrb_value tmp = a[max];
+    a[max] = a[index];
+    a[index] = tmp;
+    heapify(mrb, a, max, size, blk);
+  }
+}
+
+/*
+ *  call-seq:
+ *    array.sort! -> self
+ *    array.sort! {|a, b| ... } -> self
+ *
+ *  Sort all elements and replace +self+ with these
+ *  elements.
+ */
+static mrb_value
+mrb_ary_sort_bang(mrb_state *mrb, mrb_value ary)
+{
+  mrb_value blk;
+
+  mrb_int n = RARRAY_LEN(ary);
+  if (n < 2) return ary;
+
+  ary_modify(mrb, mrb_ary_ptr(ary));
+  mrb_get_args(mrb, "&", &blk);
+
+  mrb_value *a = RARRAY_PTR(ary);
+  for (mrb_int i = n / 2 - 1; i > -1; i--) {
+    heapify(mrb, a, i, n, blk);
+  }
+  for (mrb_int i = n - 1; i > 0; i--) {
+    mrb_value tmp = a[0];
+    a[0] = a[i];
+    a[i] = tmp;
+    heapify(mrb, a, 0, i, blk);
+  }
+  return ary;
 }
 
 void
@@ -1425,11 +1668,16 @@ mrb_init_array(mrb_state *mrb)
   mrb_define_method_id(mrb, a, MRB_OPSYM(aref),          mrb_ary_aget,         MRB_ARGS_ARG(1,1)); /* 15.2.12.5.4  */
   mrb_define_method_id(mrb, a, MRB_OPSYM(aset),          mrb_ary_aset,         MRB_ARGS_ARG(2,1)); /* 15.2.12.5.5  */
   mrb_define_method_id(mrb, a, MRB_SYM(clear),           mrb_ary_clear_m,      MRB_ARGS_NONE());   /* 15.2.12.5.6  */
+  mrb_define_method_id(mrb, a, MRB_OPSYM(cmp),           mrb_ary_cmp,          MRB_ARGS_REQ(1));
   mrb_define_method_id(mrb, a, MRB_SYM(concat),          mrb_ary_concat_m,     MRB_ARGS_REQ(1));   /* 15.2.12.5.8  */
+  mrb_define_method_id(mrb, a, MRB_SYM(delete),          mrb_ary_delete,       MRB_ARGS_REQ(1));
   mrb_define_method_id(mrb, a, MRB_SYM(delete_at),       mrb_ary_delete_at,    MRB_ARGS_REQ(1));   /* 15.2.12.5.9  */
   mrb_define_method_id(mrb, a, MRB_SYM_Q(empty),         mrb_ary_empty_p,      MRB_ARGS_NONE());   /* 15.2.12.5.12 */
+  mrb_define_method_id(mrb, a, MRB_OPSYM(eq),            mrb_ary_eq,           MRB_ARGS_REQ(1));
+  mrb_define_method_id(mrb, a, MRB_SYM_Q(eql),           mrb_ary_eql,          MRB_ARGS_REQ(1));
   mrb_define_method_id(mrb, a, MRB_SYM(first),           mrb_ary_first,        MRB_ARGS_OPT(1));   /* 15.2.12.5.13 */
   mrb_define_method_id(mrb, a, MRB_SYM(index),           mrb_ary_index_m,      MRB_ARGS_REQ(1));   /* 15.2.12.5.14 */
+  mrb_define_method_id(mrb, a, MRB_SYM(initialize),      mrb_ary_init,         MRB_ARGS_OPT(2));   /* 15.2.12.5.15 */
   mrb_define_method_id(mrb, a, MRB_SYM(initialize_copy), mrb_ary_replace_m,    MRB_ARGS_REQ(1));   /* 15.2.12.5.16 */
   mrb_define_method_id(mrb, a, MRB_SYM(join),            mrb_ary_join_m,       MRB_ARGS_OPT(1));   /* 15.2.12.5.17 */
   mrb_define_method_id(mrb, a, MRB_SYM(last),            mrb_ary_last,         MRB_ARGS_OPT(1));   /* 15.2.12.5.18 */
@@ -1446,10 +1694,7 @@ mrb_init_array(mrb_state *mrb)
   mrb_define_method_id(mrb, a, MRB_SYM(unshift),         mrb_ary_unshift_m,    MRB_ARGS_ANY());    /* 15.2.12.5.30 */
   mrb_define_method_id(mrb, a, MRB_SYM(to_s),            mrb_ary_to_s,         MRB_ARGS_NONE());
   mrb_define_method_id(mrb, a, MRB_SYM(inspect),         mrb_ary_to_s,         MRB_ARGS_NONE());
+  mrb_define_method_id(mrb, a, MRB_SYM_B(sort),          mrb_ary_sort_bang,    MRB_ARGS_NONE());
 
-  mrb_define_method_id(mrb, a, MRB_SYM(__ary_eq),        mrb_ary_eq,           MRB_ARGS_REQ(1));
-  mrb_define_method_id(mrb, a, MRB_SYM(__ary_cmp),       mrb_ary_cmp,          MRB_ARGS_REQ(1));
-  mrb_define_method_id(mrb, a, MRB_SYM(__ary_index),     mrb_ary_index_m,      MRB_ARGS_REQ(1));   /* kept for mruby-array-ext */
-  mrb_define_method_id(mrb, a, MRB_SYM(__delete),        mrb_ary_delete,       MRB_ARGS_REQ(1));
   mrb_define_method_id(mrb, a, MRB_SYM(__svalue),        mrb_ary_svalue,       MRB_ARGS_NONE());
 }
