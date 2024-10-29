@@ -334,12 +334,8 @@ local_add(parser_state *p, mrb_sym sym)
   }
 }
 
-static void
-local_add_blk(parser_state *p, mrb_sym blk)
-{
-  /* allocate register for block */
-  local_add_f(p, blk ? blk : 0);
-}
+/* allocate register for block */
+#define local_add_blk(p) local_add_f(p, 0)
 
 static void
 local_add_kw(parser_state *p, mrb_sym kwd)
@@ -552,18 +548,11 @@ new_zsuper(parser_state *p)
 static node*
 new_yield(parser_state *p, node *c)
 {
-  if (c) {
-    if (c->cdr) {
-      if (c->cdr->cdr) {
+  if (c && c->cdr && c->cdr->cdr) {
         yyerror(NULL, p, "both block arg and actual block given");
-      }
-      if (c->cdr->car) {
-        return cons((node*)NODE_YIELD, push(c->car, c->cdr->car));
-      }
-    }
-    return cons((node*)NODE_YIELD, c->car);
   }
-  return cons((node*)NODE_YIELD, 0);
+
+  return cons((node*)NODE_YIELD, c);
 }
 
 /* (:return . c) */
@@ -872,7 +861,8 @@ new_args_tail(parser_state *p, node *kws, node *kwrest, mrb_sym blk)
     local_add_kw(p, (kwrest && kwrest->cdr)? sym(kwrest->cdr) : 0);
   }
 
-  local_add_blk(p, blk);
+  local_add_blk(p);
+  if (blk) local_add_f(p, blk);
 
   /* allocate register for keywords arguments */
   /* order is for Proc#parameters */
@@ -3103,7 +3093,7 @@ block_param     : f_arg ',' f_block_optarg ',' f_rest_arg opt_block_args_tail
 
 opt_block_param : none
                     {
-                      local_add_blk(p, 0);
+                      local_add_blk(p);
                       $$ = 0;
                     }
                 | block_param_def
@@ -3113,13 +3103,13 @@ opt_block_param : none
                     }
                 ;
 
-block_param_def : '|' {local_add_blk(p, 0);} opt_bv_decl '|'
+block_param_def : '|' {local_add_blk(p);} opt_bv_decl '|'
                     {
                       $$ = 0;
                     }
                 | tOROP
                     {
-                      local_add_blk(p, 0);
+                      local_add_blk(p);
                       $$ = 0;
                     }
                 | '|' block_param opt_bv_decl '|'
@@ -3486,7 +3476,6 @@ words           : tWORDS_BEG tSTRING
 
 symbol          : basic_symbol
                     {
-                      p->lstate = EXPR_ENDARG;
                       $$ = new_sym(p, $1);
                     }
                 | tSYMBEG tSTRING_BEG string_rep tSTRING
@@ -3505,6 +3494,7 @@ symbol          : basic_symbol
 
 basic_symbol    : tSYMBEG sym
                     {
+                      p->lstate = EXPR_END;
                       $$ = $2;
                     }
                 ;
@@ -5053,7 +5043,7 @@ parse_string(parser_state *p)
   }
 
   tokfix(p);
-  p->lstate = EXPR_ENDARG;
+  p->lstate = EXPR_END;
   end_strterm(p);
 
   if (type & STR_FUNC_XQUOTE) {
@@ -5614,7 +5604,7 @@ parser_yylex(parser_state *p)
     }
     tokfix(p);
     pylval.nd = new_str(p, tok(p), toklen(p));
-    p->lstate = EXPR_ENDARG;
+    p->lstate = EXPR_END;
     return tCHAR;
 
   case '&':
@@ -5768,10 +5758,13 @@ parser_yylex(parser_state *p)
     int suffix = 0;
 
     is_float = seen_point = seen_e = nondigit = 0;
-    p->lstate = EXPR_ENDARG;
+    p->lstate = EXPR_END;
     newtok(p);
-    if (c == '-' || c == '+') {
+    if (c == '-') {
       tokadd(p, c);
+      c = nextc(p);
+    }
+    else if (c == '+') {
       c = nextc(p);
     }
     if (c == '0') {

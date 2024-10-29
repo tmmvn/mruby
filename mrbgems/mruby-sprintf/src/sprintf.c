@@ -17,7 +17,7 @@
 #define BITSPERDIG MRB_INT_BIT
 #define EXTENDSIGN(n, l) (((~0U << (n)) >> (((n)*(l)) % BITSPERDIG)) & ~(~0U << (n)))
 
-mrb_value mrb_bint_2comp(mrb_state *mrb, mrb_value x, mrb_int base);
+mrb_value mrb_bint_2comp(mrb_state *mrb, mrb_value x);
 
 static char*
 remove_sign_bits(char *str, int base)
@@ -303,6 +303,7 @@ mrb_str_format(mrb_state *mrb, mrb_int argc, const mrb_value *argv, mrb_value fm
   buf = RSTRING_PTR(result);
   memset(buf, 0, bsiz);
 
+  int ai = mrb_gc_arena_save(mrb);
   for (; p < end; p++) {
     const char *t;
     mrb_sym id = 0;
@@ -490,6 +491,7 @@ retry:
           if (width>0) FILL(' ', width-1);
           PUSH(c, n);
         }
+        mrb_gc_arena_restore(mrb, ai);
       }
       break;
 
@@ -536,6 +538,7 @@ retry:
           }
         }
         PUSH(RSTRING_PTR(str), len);
+        mrb_gc_arena_restore(mrb, ai);
       }
       break;
 
@@ -599,7 +602,7 @@ retry:
               mrb_int n = (mrb_bint_cmp(mrb, val, mrb_fixnum_value(0)));
               mrb_bool need_dots = ((flags & FPLUS) == 0) && (base == 16 || base == 8 || base == 2) && n < 0;
               if (need_dots) {
-                val = mrb_bint_2comp(mrb, val, base);
+                val = mrb_bint_2comp(mrb, val);
                 dots = 1;
                 v = -1;
               }
@@ -665,6 +668,14 @@ retry:
           fc = '1'; break;
         }
 
+        if (dots) {
+          if (base == 8 && (*s == '1' || *s == '3')) {
+            s++; len--;
+          }
+          while (*s == fc) {
+            s++; len--;
+          }
+        }
         if (*p == 'X') {
           char *pp = s;
           int c;
@@ -672,7 +683,7 @@ retry:
             *pp = toupper(c);
             pp++;
           }
-          if (base == 16 && fc) {
+          if (base == 16) {
             fc = 'F';
           }
         }

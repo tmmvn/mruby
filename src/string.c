@@ -1452,6 +1452,7 @@ mrb_str_aset(mrb_state *mrb, mrb_value str, mrb_value indx, mrb_value alen, mrb_
  *
  * Modify +self+ by replacing the content of +self+.
  * The portion of the string affected is determined using the same criteria as +String#[]+.
+ * The return value of this expression is +replace+.
  */
 static mrb_value
 mrb_str_aset_m(mrb_state *mrb, mrb_value str)
@@ -1467,7 +1468,7 @@ mrb_str_aset_m(mrb_state *mrb, mrb_value str)
       break;
   }
   mrb_str_aset(mrb, str, indx, alen, replace);
-  return str;
+  return replace;
 }
 
 /* 15.2.10.5.8  */
@@ -1794,7 +1795,7 @@ mrb_str_substr(mrb_state *mrb, mrb_value str, mrb_int beg, mrb_int len)
 }
 
 /*
- * 32 bit magic FNV-0 and FNV-1 prime
+ * 32-bit magic FNV-0 and FNV-1 prime
 b */
 #define FNV_32_PRIME ((uint32_t)0x01000193)
 #define FNV1_32_INIT ((uint32_t)0x811c9dc5)
@@ -1808,7 +1809,7 @@ mrb_byte_hash_step(const uint8_t *s, mrb_int len, uint32_t hval)
    * FNV-1 hash each octet in the buffer
    */
   while (s < send) {
-    /* multiply by the 32 bit FNV magic prime mod 2^32 */
+    /* multiply by the 32-bit FNV magic prime mod 2^32 */
 #if defined(NO_FNV_GCC_OPTIMIZATION)
     hval *= FNV_32_PRIME;
 #else

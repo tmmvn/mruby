@@ -659,7 +659,7 @@ mrb_class_get_id(mrb_state *mrb, mrb_sym name)
 MRB_API struct RClass*
 mrb_exc_get_id(mrb_state *mrb, mrb_sym name)
 {
-  mrb_value c = mrb_const_get(mrb, mrb_obj_value(mrb->object_class), name);
+  mrb_value c = mrb_exc_const_get(mrb, name);
 
   if (!mrb_class_p(c)) {
     mrb_raise(mrb, E_EXCEPTION, "exception corrupted");
@@ -670,7 +670,9 @@ mrb_exc_get_id(mrb_state *mrb, mrb_sym name)
     if (e == E_EXCEPTION)
       return exc;
   }
-  return E_EXCEPTION;
+  mrb_raise(mrb, E_EXCEPTION, "non-exception raised");
+  /* not reached */
+  return NULL;
 }
 
 MRB_API struct RClass*
@@ -834,6 +836,7 @@ mrb_get_argc(mrb_state *mrb)
   if (argc == 15) {
     struct RArray *a = mrb_ary_ptr(mrb->c->ci->stack[1]);
 
+    a->c = NULL; /* hide from ObjectSpace.each_object */
     argc = ARY_LEN(a);
   }
   return argc;
@@ -847,6 +850,7 @@ mrb_get_argv(mrb_state *mrb)
   if (argc == 15) {
     struct RArray *a = mrb_ary_ptr(*array_argv);
 
+    a->c = NULL; /* hide from ObjectSpace.each_object */
     array_argv = ARY_PTR(a);
   }
   return array_argv;
@@ -965,6 +969,7 @@ get_args_v(mrb_state *mrb, mrb_args_format format, void** ptr, va_list *ap)
     struct RArray *a = mrb_ary_ptr(*argv);
     argv = ARY_PTR(a);
     argc = ARY_LEN(a);
+    a->c = NULL; /* hide from ObjectSpace.each_object */
   }
 
   opt = FALSE;
@@ -2699,7 +2704,7 @@ static void
 init_copy(mrb_state *mrb, mrb_value dest, mrb_value obj)
 {
   mrb_assert((mrb_type(dest) == mrb_type(obj)));
-  switch (mrb_type(obj)) {
+  switch (mrb_unboxed_type(obj)) {
     case MRB_TT_ICLASS:
       copy_class(mrb, dest, obj);
       return;
@@ -2719,6 +2724,14 @@ init_copy(mrb_state *mrb, mrb_value dest, mrb_value obj)
     case MRB_TT_ISTRUCT:
       mrb_istruct_copy(dest, obj);
       break;
+#if !defined(MRB_NO_FLOAT) && defined(MRB_WORDBOX_NO_FLOAT_TRUNCATE)
+    case MRB_TT_FLOAT:
+      {
+        struct RFloat *f = (struct RFloat*)mrb_obj_ptr(dest);
+        f->f = mrb_float(obj);
+      }
+      break;
+#endif
 #ifdef MRB_USE_BIGINT
     case MRB_TT_BIGINT:
       mrb_bint_copy(mrb, dest, obj);
@@ -2778,7 +2791,7 @@ mrb_obj_clone(mrb_state *mrb, mrb_value self)
   if (mrb_sclass_p(self)) {
     mrb_raise(mrb, E_TYPE_ERROR, "can't clone singleton class");
   }
-  struct RObject *p = (struct RObject*)mrb_obj_alloc(mrb, mrb_type(self), mrb_obj_class(mrb, self));
+  struct RObject *p = (struct RObject*)mrb_obj_alloc(mrb, mrb_unboxed_type(self), mrb_obj_class(mrb, self));
   p->c = mrb_singleton_class_clone(mrb, self);
   mrb_field_write_barrier(mrb, (struct RBasic*)p, (struct RBasic*)p->c);
 
@@ -2907,6 +2920,7 @@ static const mrb_irep new_irep = {
   sizeof(new_iseq), 0, 2, 0, 0,
 };
 
+mrb_alignas(8)
 static const struct RProc new_proc = {
   NULL, NULL, MRB_TT_PROC, MRB_GC_RED, MRB_FL_OBJ_IS_FROZEN | MRB_PROC_SCOPE | MRB_PROC_STRICT,
   { &new_irep }, NULL, { NULL }

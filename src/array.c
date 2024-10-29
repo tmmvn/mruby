@@ -313,15 +313,17 @@ mrb_ary_init(mrb_state *mrb, mrb_value ary)
     ary_expand_capa(mrb, a, size);
   }
 
+  int ai = mrb_gc_arena_save(mrb);
   for (mrb_int i=0; i<size; i++) {
     mrb_value val;
     if (mrb_nil_p(blk)) {
       val = obj;
     }
     else {
-      val = mrb_funcall_id(mrb, blk, MRB_SYM(call), 1, mrb_fixnum_value(i));
+      val = mrb_yield(mrb, blk, mrb_fixnum_value(i));
     }
     mrb_ary_set(mrb, ary, i, val);
+    mrb_gc_arena_restore(mrb, ai); // for mrb_funcall
   }
   return ary;
 }
@@ -1166,7 +1168,7 @@ mrb_ary_index_m(mrb_state *mrb, mrb_value self)
   }
   else {
     for (mrb_int i = 0; i < RARRAY_LEN(self); i++) {
-      mrb_value eq = mrb_funcall_id(mrb, blk, MRB_SYM(call), 1, RARRAY_PTR(self)[i]);
+      mrb_value eq = mrb_yield(mrb, blk, RARRAY_PTR(self)[i]);
       if (mrb_test(eq)) {
         return mrb_int_value(mrb, i);
       }
@@ -1206,7 +1208,7 @@ mrb_ary_rindex_m(mrb_state *mrb, mrb_value self)
       }
     }
     else {
-      mrb_value eq = mrb_funcall_id(mrb, blk, MRB_SYM(call), 1, RARRAY_PTR(self)[i]);
+      mrb_value eq = mrb_yield(mrb, blk, RARRAY_PTR(self)[i]);
       if (mrb_test(eq)) return mrb_int_value(mrb, i);
     }
     mrb_int len = RARRAY_LEN(self);
@@ -1271,12 +1273,6 @@ mrb_ary_clear(mrb_state *mrb, mrb_value self)
     ARY_SET_LEN(a, 0);
   }
   return self;
-}
-
-static mrb_value
-mrb_ary_clear_m(mrb_state *mrb, mrb_value self)
-{
-  return mrb_ary_clear(mrb, self);
 }
 
 static mrb_value
@@ -1440,9 +1436,11 @@ mrb_ary_eq(mrb_state *mrb, mrb_value ary1)
   if (n == 1) return mrb_true_value();
   if (n == 0) return mrb_false_value();
 
+  int ai = mrb_gc_arena_save(mrb);
   for (mrb_int i=0; i<RARRAY_LEN(ary1); i++) {
     mrb_value eq = mrb_funcall_id(mrb, mrb_ary_entry(ary1, i), MRB_OPSYM(eq), 1, mrb_ary_entry(ary2, i));
     if (!mrb_test(eq)) return mrb_false_value();
+    mrb_gc_arena_restore(mrb, ai);
   }
   return mrb_true_value();
 }
@@ -1464,9 +1462,11 @@ mrb_ary_eql(mrb_state *mrb, mrb_value ary1)
   if (n == 1) return mrb_true_value();
   if (n == 0) return mrb_false_value();
 
+  int ai = mrb_gc_arena_save(mrb);
   for (mrb_int i=0; i<RARRAY_LEN(ary1); i++) {
     mrb_value eq = mrb_funcall_id(mrb, mrb_ary_entry(ary1, i), MRB_SYM_Q(eql), 1, mrb_ary_entry(ary2, i));
     if (!mrb_test(eq)) return mrb_false_value();
+    mrb_gc_arena_restore(mrb, ai);
   }
   return mrb_true_value();
 }
@@ -1493,15 +1493,12 @@ mrb_ary_cmp(mrb_state *mrb, mrb_value ary1)
   if (mrb_obj_equal(mrb, ary1, ary2)) return mrb_fixnum_value(0);
   if (!mrb_array_p(ary2)) return mrb_nil_value();
 
-  mrb_int len = RARRAY_LEN(ary1);
-  mrb_int n =  RARRAY_LEN(ary2);
-  if (len > n) len = n;
-  for (mrb_int i=0; i<len; i++) {
-    n = mrb_cmp(mrb, RARRAY_PTR(ary1)[i], RARRAY_PTR(ary2)[i]);
+  for (mrb_int i=0; i<RARRAY_LEN(ary1) && i<RARRAY_LEN(ary2); i++) {
+    mrb_int n = mrb_cmp(mrb, RARRAY_PTR(ary1)[i], RARRAY_PTR(ary2)[i]);
     if (n == -2) return mrb_nil_value();
     if (n != 0) return mrb_fixnum_value(n);
   }
-  len = RARRAY_LEN(ary1) - RARRAY_LEN(ary2);
+  mrb_int len = RARRAY_LEN(ary1) - RARRAY_LEN(ary2);
   if (len == 0) return mrb_fixnum_value(0);
   else if (len > 0) return mrb_fixnum_value(1);
   else return mrb_fixnum_value(-1);
@@ -1545,78 +1542,89 @@ mrb_ary_delete(mrb_state *mrb, mrb_value self)
   mrb_get_args(mrb, "o&", &obj, &blk);
 
   struct RArray *ary = RARRAY(self);
-  mrb_value *val_ptr = ARY_PTR(ary);
-  size_t len = ARY_LEN(ary);
-  mrb_bool modified = FALSE;
-
   mrb_value ret = obj;
-
-  size_t i = 0;
-  size_t j = 0;
-  for (; i < len; ++i) {
-    mrb_value elem = val_ptr[i];
+  int ai = mrb_gc_arena_save(mrb);
+  mrb_int i = 0;
+  mrb_int j = 0;
+  for (; i < ARY_LEN(ary); i++) {
+    mrb_value elem = ARY_PTR(ary)[i];
 
     if (mrb_equal(mrb, elem, obj)) {
+      mrb_gc_arena_restore(mrb, ai);
+      mrb_gc_protect(mrb, elem);
       ret = elem;
       continue;
     }
 
     if (i != j) {
-      if (!modified) {
-        ary_modify(mrb, ary);
-        val_ptr = ARY_PTR(ary);
-        modified = TRUE;
+      if (j >= ARY_LEN(ary)) {
+        // Since breaking here will further change the array length,
+        // there is no choice but to raise an exception or return.
+        mrb_raise(mrb, E_RUNTIME_ERROR, "array modified during delete");
       }
-      val_ptr[j] = elem;
+      ary_modify(mrb, ary);
+      ARY_PTR(ary)[j] = elem;
     }
 
-    ++j;
+    j++;
   }
 
   if (i == j) {
     if (mrb_nil_p(blk)) return mrb_nil_value();
-    return mrb_funcall_id(mrb, blk, MRB_SYM(call), 1, obj);
+    return mrb_yield(mrb, blk, obj);
   }
 
   ARY_SET_LEN(ary, j);
   return ret;
 }
 
+static mrb_noreturn void
+cmp_failed(mrb_state *mrb, mrb_int a, mrb_int b)
+{
+  mrb_raisef(mrb, E_ARGUMENT_ERROR, "comparison failed (element %d and %d)", a, b);
+}
+
 static mrb_bool
-sort_cmp(mrb_state *mrb, mrb_value *p, mrb_int a, mrb_int b, mrb_value blk)
+sort_cmp(mrb_state *mrb, mrb_value ary, mrb_value *p, mrb_int a, mrb_int b, mrb_value blk)
 {
   mrb_int cmp;
 
   if (mrb_nil_p(blk)) {
     cmp = mrb_cmp(mrb, p[a], p[b]);
+    if (cmp == -2) cmp_failed(mrb, a, b);
   }
   else {
-    mrb_value c = mrb_funcall_id(mrb, blk, MRB_SYM(call), 2, p[a], p[b]);
+    mrb_value args[2] = {p[a], p[b]};
+    mrb_value c = mrb_yield_argv(mrb, blk, 2, args);
     if (mrb_nil_p(c) || !mrb_fixnum_p(c)) {
-      mrb_raisef(mrb, E_ARGUMENT_ERROR, "comparison of %!v and %!v failed", p[a], p[b]);
+      cmp_failed(mrb, a, b);
     }
     cmp = mrb_fixnum(c);
+  }
+  mrb_int size = RARRAY_LEN(ary);
+  if (RARRAY_PTR(ary) != p || size < a || size < b) {
+    mrb_raise(mrb, E_RUNTIME_ERROR, "array modified during sort");
   }
   return cmp > 0;
 }
 
 static void
-heapify(mrb_state *mrb, mrb_value *a, mrb_int index, mrb_int size, mrb_value blk)
+heapify(mrb_state *mrb, mrb_value ary, mrb_value *a, mrb_int index, mrb_int size, mrb_value blk)
 {
   mrb_int max = index;
   mrb_int left_index = 2 * index + 1;
   mrb_int right_index = left_index + 1;
-  if (left_index < size && sort_cmp(mrb, a, left_index, max, blk)) {
+  if (left_index < size && sort_cmp(mrb, ary, a, left_index, max, blk)) {
     max = left_index;
   }
-  if (right_index < size && sort_cmp(mrb, a, right_index, max, blk)) {
+  if (right_index < size && sort_cmp(mrb, ary, a, right_index, max, blk)) {
     max = right_index;
   }
   if (max != index) {
     mrb_value tmp = a[max];
     a[max] = a[index];
     a[index] = tmp;
-    heapify(mrb, a, max, size, blk);
+    heapify(mrb, ary, a, max, size, blk);
   }
 }
 
@@ -1641,13 +1649,13 @@ mrb_ary_sort_bang(mrb_state *mrb, mrb_value ary)
 
   mrb_value *a = RARRAY_PTR(ary);
   for (mrb_int i = n / 2 - 1; i > -1; i--) {
-    heapify(mrb, a, i, n, blk);
+    heapify(mrb, ary, a, i, n, blk);
   }
   for (mrb_int i = n - 1; i > 0; i--) {
     mrb_value tmp = a[0];
     a[0] = a[i];
     a[i] = tmp;
-    heapify(mrb, a, 0, i, blk);
+    heapify(mrb, ary, a, 0, i, blk);
   }
   return ary;
 }
@@ -1667,7 +1675,7 @@ mrb_init_array(mrb_state *mrb)
   mrb_define_method_id(mrb, a, MRB_OPSYM(lshift),        mrb_ary_push_m,       MRB_ARGS_REQ(1));   /* 15.2.12.5.3  */
   mrb_define_method_id(mrb, a, MRB_OPSYM(aref),          mrb_ary_aget,         MRB_ARGS_ARG(1,1)); /* 15.2.12.5.4  */
   mrb_define_method_id(mrb, a, MRB_OPSYM(aset),          mrb_ary_aset,         MRB_ARGS_ARG(2,1)); /* 15.2.12.5.5  */
-  mrb_define_method_id(mrb, a, MRB_SYM(clear),           mrb_ary_clear_m,      MRB_ARGS_NONE());   /* 15.2.12.5.6  */
+  mrb_define_method_id(mrb, a, MRB_SYM(clear),           mrb_ary_clear,        MRB_ARGS_NONE());   /* 15.2.12.5.6  */
   mrb_define_method_id(mrb, a, MRB_OPSYM(cmp),           mrb_ary_cmp,          MRB_ARGS_REQ(1));
   mrb_define_method_id(mrb, a, MRB_SYM(concat),          mrb_ary_concat_m,     MRB_ARGS_REQ(1));   /* 15.2.12.5.8  */
   mrb_define_method_id(mrb, a, MRB_SYM(delete),          mrb_ary_delete,       MRB_ARGS_REQ(1));

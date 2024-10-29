@@ -128,6 +128,7 @@ mrb_value mrb_rational_mul(mrb_state *mrb, mrb_value x, mrb_value y);
 mrb_value mrb_rational_div(mrb_state *mrb, mrb_value x, mrb_value y);
 mrb_value mrb_as_rational(mrb_state *mrb, mrb_value x);
 void mrb_rational_copy(mrb_state *mrb, mrb_value x, mrb_value y);
+int mrb_rational_mark(mrb_state *mrb, struct RBasic *rat);
 #endif
 
 #ifdef MRUBY_PROC_H
@@ -181,6 +182,7 @@ mrb_value mrb_mod_class_variables(mrb_state*, mrb_value);
 mrb_value mrb_mod_cv_get(mrb_state *mrb, struct RClass * c, mrb_sym sym);
 mrb_bool mrb_mod_cv_defined(mrb_state *mrb, struct RClass * c, mrb_sym sym);
 mrb_bool mrb_ident_p(const char *s, mrb_int len);
+mrb_value mrb_exc_const_get(mrb_state *mrb, mrb_sym sym);
 
 /* GC functions */
 void mrb_gc_mark_gv(mrb_state*);
@@ -193,6 +195,7 @@ mrb_int mrb_ci_bidx(mrb_callinfo *ci);
 mrb_int mrb_ci_nregs(mrb_callinfo *ci);
 mrb_value mrb_exec_irep(mrb_state *mrb, mrb_value self, struct RProc *p);
 mrb_value mrb_obj_instance_eval(mrb_state*, mrb_value);
+mrb_value mrb_object_exec(mrb_state *mrb, mrb_value self, struct RClass *target_class);
 mrb_value mrb_mod_module_eval(mrb_state*, mrb_value);
 mrb_value mrb_f_send(mrb_state *mrb, mrb_value self);
 
@@ -208,8 +211,8 @@ mrb_value mrb_bint_new_str(mrb_state *mrb, const char *x, mrb_int len, mrb_int b
 mrb_value mrb_as_bint(mrb_state *mrb, mrb_value x);
 mrb_value mrb_bint_add(mrb_state *mrb, mrb_value x, mrb_value y);
 mrb_value mrb_bint_sub(mrb_state *mrb, mrb_value x, mrb_value y);
-mrb_value mrb_bint_add_d(mrb_state *mrb, mrb_value x, mrb_value y);
-mrb_value mrb_bint_sub_d(mrb_state *mrb, mrb_value x, mrb_value y);
+mrb_value mrb_bint_add_n(mrb_state *mrb, mrb_value x, mrb_value y);
+mrb_value mrb_bint_sub_n(mrb_state *mrb, mrb_value x, mrb_value y);
 mrb_value mrb_bint_mul(mrb_state *mrb, mrb_value x, mrb_value y);
 mrb_value mrb_bint_div(mrb_state *mrb, mrb_value x, mrb_value y);
 mrb_value mrb_bint_divmod(mrb_state *mrb, mrb_value x, mrb_value y);
@@ -222,6 +225,7 @@ mrb_value mrb_bint_pow(mrb_state *mrb, mrb_value x, mrb_value y);
 mrb_value mrb_bint_powm(mrb_state *mrb, mrb_value x, mrb_value y, mrb_value z);
 mrb_value mrb_bint_and(mrb_state *mrb, mrb_value x, mrb_value y);
 mrb_value mrb_bint_or(mrb_state *mrb, mrb_value x, mrb_value y);
+mrb_value mrb_bint_neg(mrb_state *mrb, mrb_value x);
 mrb_value mrb_bint_xor(mrb_state *mrb, mrb_value x, mrb_value y);
 mrb_value mrb_bint_rev(mrb_state *mrb, mrb_value x);
 mrb_value mrb_bint_lshift(mrb_state *mrb, mrb_value x, mrb_int width);

@@ -1376,7 +1376,7 @@ lambda_body(codegen_scope *s, node *tree, int blk)
     pa = node_len(tree->car->cdr->cdr->cdr->car);
     pargs = tree->car->cdr->cdr->cdr->car;
     /* keyword arguments */
-    ka = tail? node_len(tail->cdr->car) : 0;
+    ka = tail ? node_len(tail->cdr->car) : 0;
     /* keyword dictionary? */
     kd = tail && tail->cdr->cdr->car? 1 : 0;
     /* block argument? */
@@ -1388,16 +1388,16 @@ lambda_body(codegen_scope *s, node *tree, int blk)
     /* (23bits = 5:5:1:5:5:1:1) */
     a = MRB_ARGS_REQ(ma)
       | MRB_ARGS_OPT(oa)
-      | (ra? MRB_ARGS_REST() : 0)
+      | (ra ? MRB_ARGS_REST() : 0)
       | MRB_ARGS_POST(pa)
       | MRB_ARGS_KEY(ka, kd)
-      | (ba? MRB_ARGS_BLOCK() : 0);
+      | (ba ? MRB_ARGS_BLOCK() : 0);
     genop_W(s, OP_ENTER, a);
     /* (12bits = 5:1:5:1) */
     s->ainfo = (((ma+oa) & 0x3f) << 7)
       | ((ra & 0x1) << 6)
       | ((pa & 0x1f) << 1)
-      | ((ka | kd) ? 1 : 0);
+      | (ka || kd);
     /* generate jump table for optional arguments initializer */
     pos = new_label(s);
     for (i=0; i<oa; i++) {
@@ -1474,6 +1474,14 @@ lambda_body(codegen_scope *s, node *tree, int blk)
       }
       if (tail->cdr->car && !kwrest) {
         genop_0(s, OP_KEYEND);
+      }
+      if (ba) {
+        mrb_sym bparam = nsym(tail->cdr->cdr->cdr->car);
+        pos = ma+oa+ra+pa+(ka||kd);
+        if (bparam) {
+          int idx = lv_idx(s, bparam);
+          genop_2(s, OP_MOVE, idx, pos+1);
+        }
       }
     }
 
@@ -3058,6 +3066,7 @@ codegen(codegen_scope *s, node *tree, int val)
       if (s2 && s2->ainfo > 0) {
         ainfo = s2->ainfo;
       }
+      if (lv > 0xf) codegen_error(s, "too deep nesting");
       if (ainfo > 0) {
         genop_2S(s, OP_ARGARY, cursp(), (ainfo<<4)|(lv & 0xf));
         push(); push(); push();   /* ARGARY pushes 3 values at most */
@@ -3109,7 +3118,7 @@ codegen(codegen_scope *s, node *tree, int val)
     {
       codegen_scope *s2 = s;
       int lv = 0, ainfo = -1;
-      int n = 0, sendv = 0;
+      int n = 0, nk = 0, sendv = 0;
 
       while (!s2->mscope) {
         lv++;
@@ -3120,19 +3129,29 @@ codegen(codegen_scope *s, node *tree, int val)
         ainfo = (int)s2->ainfo;
       }
       if (ainfo < 0) codegen_error(s, "invalid yield (SyntaxError)");
+      if (lv > 0xf) codegen_error(s, "too deep nesting");
       push();
       if (tree) {
-        n = gen_values(s, tree, VAL, 14);
-        if (n < 0) {
-          n = sendv = 1;
-          push();
+        if (tree->car) {
+          n = gen_values(s, tree->car, VAL, 14);
+          if (n < 0) {
+            n = sendv = 1;
+            push();
+          }
+        }
+
+        if (tree->cdr->car) {
+          nk = gen_hash(s, tree->cdr->car->cdr, VAL, 14);
+          if (nk < 0) {
+            nk = 15;
+          }
         }
       }
       push();pop(); /* space for a block */
-      pop_n(n+1);
+      pop_n(n + (nk == 15 ? 1 : nk * 2) + 1);
       genop_2S(s, OP_BLKPUSH, cursp(), (ainfo<<4)|(lv & 0xf));
       if (sendv) n = CALL_MAXARGS;
-      genop_3(s, OP_SEND, cursp(), new_sym(s, MRB_SYM_2(s->mrb, call)), n);
+      genop_3(s, OP_SEND, cursp(), new_sym(s, MRB_SYM_2(s->mrb, call)), n|(nk<<4));
       if (val) push();
     }
     break;

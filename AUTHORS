@@ -1,9 +1,9 @@
 # Authors of mruby (mruby developers)
 
-## The List of Contributors sorted by number of commits (as of 2024-06-19 c592e7b)
+## The List of Contributors sorted by number of commits (as of 2024-10-08 b56ad8f)
 
-   5714 Yukihiro "Matz" Matsumoto (@matz)*
-    593 dearblue (@dearblue)*
+   5851 Yukihiro "Matz" Matsumoto (@matz)*
+    623 dearblue (@dearblue)*
     587 KOBAYASHI Shuji (@shuujii)
     353 Daniel Bovensiepen (@bovi)*
     345 Takeshi Watanabe (@take-cheeze)*
@@ -12,10 +12,10 @@
     228 Tomoyuki Sahara (@tsahara)*
     220 Cremno (@cremno)*
     209 Yuki Kurihara (@ksss)+
-    196 John Bampton (@jbampton)
+    206 John Bampton (@jbampton)
     144 Yasuhiro Matsumoto (@mattn)*
     113 Carson McDonald (@carsonmcdonald)
-    103 Tomasz Dąbrowski (@dabroz)*
+    104 Tomasz Pędraszewski (@dabroz)*
      83 Akira Yumiyama (@akiray03)*
      83 skandhas (@skandhas)
      80 Masamitsu MURASE (@masamitsu-murase)
@@ -57,6 +57,7 @@
      14 Kazuki Tsujimoto (@k-tsj)
      14 Tadashi FUKUZAWA (@FUKUZAWA-Tadashi)+
      14 fn ⌃ ⌥ (@FnControlOption)
+     14 leviongit (@leviongit)
      13 Jose Narvaez (@goyox86)
      13 Patrick Hogan (@pbhogan)
      12 Akira Kuroda (@akuroda)
@@ -66,7 +67,6 @@
      12 Takashi Sawanaka (@sdottaka)*
      12 Ukrainskiy Sergey (@ukrainskiysergey)
      12 Xuejie "Rafael" Xiao (@xxuejie)*
-     12 leviongit (@leviongit)
      11 Julien Ammous (@schmurfy)
      11 Kazuho Oku (@kazuho)
      11 RIZAL Reckordp (@Reckordp)+
@@ -115,8 +115,10 @@
       5 xuejianqing (@joans321)
       4 Dante Catalfamo (@dantecatalfamo)
       4 Goro Kikuchi (@gorogit)
+      4 HASUMI Hitoshi (@hasumikin)
       4 Herwin Weststrate (@herwinw)
       4 Horimoto Yasuhiro (@komainu8)
+      4 Hoshiumi Arata (@hoshiumiarata)
       4 Jon Moss (@maclover7)
       4 Ken Muramatsu (@ken-mu)+
       4 Kohei Suzuki (@eagletmt)
@@ -129,12 +131,13 @@
       4 Yuhei Okazaki (@Yuuhei-Okazaki)*
       4 Yuji Yamano (@yyamano)
       4 kurodash (@kurodash)*
+      4 vickash (@vickash)
       4 wanabe (@wanabe)*
       3 Anton Davydov (@davydovanton)
+      3 Aurora Nockert (@auroranockert)
       3 Carlo Prelz (@asfluido)*
       3 David Turnbull (@AE9RB)
       3 Franck Verrot (@franckverrot)
-      3 HASUMI Hitoshi (@hasumikin)
       3 J. Mutua (@katmutua)+
       3 Jan Berdajs (@mrbrdo)
       3 Jonas Minnberg (@sasq64)
@@ -245,6 +248,7 @@
       1 Lukas Elmer (@lukaselmer)
       1 Lukas Stabe (@Ahti)
       1 M.Naruoka (@fenrir-naru)
+      1 Marcelo Juchem (@juchem)
       1 Martin Bosslet (@emboss)+
       1 Masahiko Sawada (@MasahikoSawada)
       1 Matt Aimonetti (@mattetti)
@@ -259,6 +263,7 @@
       1 Patrick Ellis (@pje)
       1 Patrick Pokatilo (@SHyx0rmZ)
       1 Pavel Evstigneev (@Paxa)+
+      1 Pete Kinnecom (@petekinnecom)
       1 Prayag Verma (@pra85)
       1 Ranmocy (@ranmocy)
       1 Robert McNally (@wolfmcnally)

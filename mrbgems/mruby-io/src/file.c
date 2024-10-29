@@ -339,7 +339,6 @@ mrb_file__gethome(mrb_state *mrb, mrb_value klass)
   mrb_value path;
 
   mrb->c->ci->mid = 0;
-#ifndef _WIN32
   mrb_value username;
 
   mrb_int argc = mrb_get_args(mrb, "|S", &username);
@@ -348,10 +347,21 @@ mrb_file__gethome(mrb_state *mrb, mrb_value klass)
     if (home == NULL) {
       return mrb_nil_value();
     }
+#ifdef _WIN32
+    home = getenv("USERPROFILE");
+    if (home == NULL) {
+      return mrb_nil_value();
+    }
+#endif
     if (!mrb_file_is_absolute_path(home)) {
       mrb_raise(mrb, E_ARGUMENT_ERROR, "non-absolute home");
     }
   }
+#if defined(_WIN32) || defined(MRB_IO_NO_PWNAM)
+  else {
+    return mrb_nil_value();
+  }
+#else
   else {
     const char *cuser = RSTRING_CSTR(mrb, username);
     struct passwd *pwd = getpwnam(cuser);
@@ -363,29 +373,11 @@ mrb_file__gethome(mrb_state *mrb, mrb_value klass)
       mrb_raisef(mrb, E_ARGUMENT_ERROR, "non-absolute home of ~%v", username);
     }
   }
-  home = mrb_locale_from_utf8(home, -1);
-  path = mrb_str_new_cstr(mrb, home);
-  mrb_locale_free(home);
-  return path;
-#else  /* _WIN32 */
-  mrb_int argc = mrb_get_argc(mrb);
-  if (argc == 0) {
-    home = getenv("USERPROFILE");
-    if (home == NULL) {
-      return mrb_nil_value();
-    }
-    if (!mrb_file_is_absolute_path(home)) {
-      mrb_raise(mrb, E_ARGUMENT_ERROR, "non-absolute home");
-    }
-  }
-  else {
-    return mrb_nil_value();
-  }
-  home = mrb_locale_from_utf8(home, -1);
-  path = mrb_str_new_cstr(mrb, home);
-  mrb_locale_free(home);
-  return path;
 #endif
+  home = mrb_utf8_from_locale(home, -1);
+  path = mrb_str_new_cstr(mrb, home);
+  mrb_utf8_free(home);
+  return path;
 }
 
 #define TIME_OVERFLOW_P(a) (sizeof(time_t) >= sizeof(mrb_int) && ((a) > MRB_INT_MAX || (a) < MRB_INT_MIN))
@@ -546,7 +538,6 @@ mrb_file_s_symlink(mrb_state *mrb, mrb_value klass)
   mrb_raise(mrb, E_NOTIMP_ERROR, "symlink is not supported on this platform");
 #else
   mrb_value from, to;
-  int ai = mrb_gc_arena_save(mrb);
 
   mrb_get_args(mrb, "SS", &from, &to);
   const char *src = mrb_locale_from_utf8(RSTRING_CSTR(mrb, from), -1);
@@ -558,7 +549,6 @@ mrb_file_s_symlink(mrb_state *mrb, mrb_value klass)
   }
   mrb_locale_free(src);
   mrb_locale_free(dst);
-  mrb_gc_arena_restore(mrb, ai);
 #endif
   return mrb_fixnum_value(0);
 }
@@ -598,7 +588,6 @@ mrb_file_s_readlink(mrb_state *mrb, mrb_value klass)
   size_t bufsize = 100;
   ssize_t rc;
   mrb_value ret;
-  int ai = mrb_gc_arena_save(mrb);
 
   mrb_get_args(mrb, "z", &path);
   tmp = mrb_locale_from_utf8(path, -1);
@@ -615,10 +604,9 @@ mrb_file_s_readlink(mrb_state *mrb, mrb_value klass)
   }
   tmp = mrb_utf8_from_locale(buf, -1);
   ret = mrb_str_new(mrb, tmp, rc);
-  mrb_locale_free(tmp);
+  mrb_utf8_free(tmp);
   mrb_free(mrb, buf);
 
-  mrb_gc_arena_restore(mrb, ai);
   return ret;
 #endif
 }

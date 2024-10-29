@@ -266,17 +266,13 @@ int_quo(mrb_state *mrb, mrb_value x)
 static mrb_value
 coerce_step_counter(mrb_state *mrb, mrb_value self)
 {
-  mrb_value num, step;
-
-  mrb_get_args(mrb, "oo", &num, &step);
-
-#ifndef MRB_NO_FLOAT
   mrb->c->ci->mid = 0;
-  if (mrb_float_p(num) || mrb_float_p(step)) {
+  mrb_value step = mrb_get_arg1(mrb);
+#ifndef MRB_NO_FLOAT
+  if (mrb_float_p(step)) {
     return mrb_ensure_float_type(mrb, self);
   }
 #endif
-
   return self;
 }
 
@@ -1485,7 +1481,7 @@ int_ceil(mrb_state *mrb, mrb_value x)
   if (mrb_nil_p(f)) return x;
 #ifdef MRB_USE_BIGINT
   if (mrb_bigint_p(x)) {
-    x = mrb_bint_add_d(mrb, x, f);
+    x = mrb_bint_add_n(mrb, x, f);
     return mrb_bint_sub(mrb, x, mrb_bint_mod(mrb, x, f));
   }
 #endif
@@ -1633,7 +1629,7 @@ int_truncate(mrb_state *mrb, mrb_value x)
 #ifdef MRB_USE_BIGINT
   if (mrb_bigint_p(x)) {
     mrb_value m = mrb_bint_mod(mrb, x, f);
-    x = mrb_bint_sub_d(mrb, x, m);
+    x = mrb_bint_sub_n(mrb, x, m);
     if (mrb_bint_cmp(mrb, x, mrb_fixnum_value(0)) < 0) {
       return mrb_bint_add(mrb, x, f);
     }
@@ -2169,7 +2165,7 @@ mrb_init_numeric(mrb_state *mrb)
   mrb_define_method_id(mrb, integer, MRB_SYM(to_s),     int_to_s,        MRB_ARGS_OPT(1)); /* 15.2.8.3.25 */
   mrb_define_method_id(mrb, integer, MRB_SYM(inspect),  int_to_s,        MRB_ARGS_OPT(1));
   mrb_define_method_id(mrb, integer, MRB_SYM(divmod),   int_divmod,      MRB_ARGS_REQ(1)); /* 15.2.8.3.30(x) */
-  mrb_define_method_id(mrb, integer, MRB_SYM(__coerce_step_counter), coerce_step_counter, MRB_ARGS_REQ(2));
+  mrb_define_method_id(mrb, integer, MRB_SYM(__coerce_step_counter), coerce_step_counter, MRB_ARGS_REQ(1));
 
   /* Fixnum Class for compatibility */
   mrb_define_const_id(mrb, mrb->object_class, MRB_SYM(Fixnum), mrb_obj_value(integer));
